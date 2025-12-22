@@ -262,3 +262,101 @@
   50% { transform: scale(1.45); opacity: 0.6; }
   100% { transform: scale(1); opacity: 1; }
 }
+/* ===============================
+   Feedback & Suggestions Card
+================================ */
+
+.card {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 28px;
+  margin-top: 40px;
+  border: 1px solid #e5e7eb;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+/* Card title */
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 20px;
+}
+
+.card-title svg {
+  color: #2563eb;
+  font-size: 1.4rem;
+}
+
+/* Select dropdown */
+.card select {
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  font-size: 0.95rem;
+  background-color: #f9fafb;
+  outline: none;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  background: #ffffff;
+}
+
+/* Textarea */
+.card textarea {
+  width: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid #d1d5db;
+  font-size: 0.95rem;
+  resize: none;
+  background-color: #f9fafb;
+  outline: none;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card textarea::placeholder {
+  color: #9ca3af;
+}
+
+.card textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  background: #ffffff;
+}
+
+/* Submit button */
+.navigate-btn {
+  margin-top: 18px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.navigate-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.35);
+}
+
+.navigate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
