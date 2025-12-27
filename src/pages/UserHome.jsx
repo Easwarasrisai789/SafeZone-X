@@ -21,7 +21,7 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-/* ✅ NAMED IMPORT (FIXED) */
+/* IMPORTANT: named export */
 import { qrAgent } from "../rl/qrAgent";
 
 import "./UserHome.css";
@@ -110,7 +110,7 @@ const UserHome = () => {
             .filter((z) => z.active)
         );
       } catch (e) {
-        console.error(e);
+        console.error("Zone load failed:", e);
       } finally {
         setLoadingZones(false);
       }
@@ -156,11 +156,16 @@ const UserHome = () => {
     intervalRef.current = setInterval(async () => {
       if (!userLoc) return;
       const now = Date.now();
-      if (now - lastSentRef.current > 15000) {
+      if (now - lastSentRef.current >= 15000) {
         lastSentRef.current = now;
         await setDoc(
           doc(db, "liveUsers", uid),
-          { ...userLoc, updatedAt: serverTimestamp() },
+          {
+            latitude: userLoc.latitude,
+            longitude: userLoc.longitude,
+            status: "ACTIVE",
+            updatedAt: serverTimestamp(),
+          },
           { merge: true }
         );
       }
@@ -191,12 +196,12 @@ const UserHome = () => {
       : [];
 
   let selectedSafeZone = null;
-
   try {
     if (userLoc && relatedSafeZones.length > 0) {
       selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
     }
-  } catch {
+  } catch (e) {
+    console.error("qrAgent error:", e);
     selectedSafeZone = null;
   }
 
@@ -212,29 +217,41 @@ const UserHome = () => {
 
   /* FEEDBACK */
   const submitFeedback = async () => {
-    if (!feedbackMsg.trim()) return;
-    setSending(true);
-    await addDoc(collection(db, "feedbackReports"), {
-      type: feedbackType,
-      message: feedbackMsg,
-      createdAt: serverTimestamp(),
-    });
-    setFeedbackMsg("");
-    setSending(false);
-    alert("Feedback submitted");
+    if (!feedbackMsg.trim()) return alert("Enter feedback");
+    try {
+      setSending(true);
+      await addDoc(collection(db, "feedbackReports"), {
+        uid: auth.currentUser?.uid || "anonymous",
+        type: feedbackType,
+        message: feedbackMsg,
+        createdAt: serverTimestamp(),
+      });
+      setFeedbackMsg("");
+      alert("Thank you for your feedback");
+    } finally {
+      setSending(false);
+    }
   };
 
+  /* UI */
   return (
     <div className="page">
       <EmergencyNavbar />
 
       <main className="main-container">
-        {loadingZones && <p style={{ textAlign: "center" }}>Initializing…</p>}
+        {loadingZones && (
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            Initializing Safe & Risk Zones…
+          </div>
+        )}
 
         <div className="hero">
           <h1 className="hero-title">
             <HiShieldCheck /> Safe Zone Monitoring
           </h1>
+          <p className="hero-text">
+            Live emergency monitoring and navigation assistance
+          </p>
 
           {!tracking && (
             <button className="navigate-btn" onClick={startLocationTracking}>
@@ -246,72 +263,112 @@ const UserHome = () => {
         <div className="grid-2">
           <div className="card">
             <h2 className="card-title">
-              <HiMapPin /> Status
+              <HiMapPin /> Current Status
             </h2>
-            {inRisk ? "Inside Risk Zone" : "Safe Area"}
+
+            {inRisk ? (
+              <div className="risk-alert">
+                <HiExclamationTriangle /> Inside Risk Zone
+              </div>
+            ) : (
+              <div className="safe-alert">
+                <HiShieldCheck /> Safe Area
+              </div>
+            )}
+
+            <p><b>Risk Zone:</b> {activeRiskZone?.name || "None"}</p>
           </div>
 
           <div className="card">
             <h2 className="card-title">
               <HiShieldCheck /> Nearest Safe Zone
             </h2>
-            {selectedSafeZone
-              ? metersToText(distanceToSafeZone)
-              : "No safe zone"}
+
+            {selectedSafeZone ? (
+              <>
+                <p><b>Distance:</b> {metersToText(distanceToSafeZone)}</p>
+                <div className="safe-alert">
+                  Follow navigation to reach safety
+                </div>
+              </>
+            ) : (
+              <p>No safe zone available</p>
+            )}
           </div>
         </div>
 
-        {userLoc && activeRiskZone && (
-          <div className="card" style={{ marginTop: 30 }}>
-            <MapContainer
-              center={[userLoc.latitude, userLoc.longitude]}
-              zoom={14}
-              style={{ height: 320 }}
-            >
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <Circle
-                center={[activeRiskZone.latitude, activeRiskZone.longitude]}
-                radius={activeRiskZone.radius}
-                pathOptions={{ color: "red" }}
-              />
-              <Marker position={[userLoc.latitude, userLoc.longitude]}>
-                <Popup>You are here</Popup>
-              </Marker>
-            </MapContainer>
+        {tracking &&
+          inRisk &&
+          userLoc?.latitude &&
+          userLoc?.longitude &&
+          activeRiskZone?.latitude &&
+          activeRiskZone?.longitude && (
+            <div className="card" style={{ marginTop: 40 }}>
+              <h2 className="card-title">
+                <HiExclamationTriangle /> Danger Alert
+              </h2>
 
-            {selectedSafeZone && (
-              <button
-                className="navigate-btn"
-                onClick={() =>
-                  navigate(
-                    `/navigate?slat=${selectedSafeZone.latitude}&slng=${selectedSafeZone.longitude}`
-                  )
-                }
+              <MapContainer
+                center={[userLoc.latitude, userLoc.longitude]}
+                zoom={14}
+                style={{ height: 340, width: "100%" }}
               >
-                <FaRoute /> Navigate
-              </button>
-            )}
-          </div>
-        )}
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        <div className="card" style={{ marginTop: 30 }}>
+                <Circle
+                  center={[activeRiskZone.latitude, activeRiskZone.longitude]}
+                  radius={activeRiskZone.radius}
+                  pathOptions={{ color: "red", fillOpacity: 0.25 }}
+                />
+
+                {relatedSafeZones.map((z) => (
+                  <Circle
+                    key={z.id}
+                    center={[z.latitude, z.longitude]}
+                    radius={z.radius}
+                    pathOptions={{ color: "green", fillOpacity: 0.35 }}
+                  />
+                ))}
+
+                <Marker position={[userLoc.latitude, userLoc.longitude]}>
+                  <Popup>You are here</Popup>
+                </Marker>
+              </MapContainer>
+
+              {selectedSafeZone && (
+                <button
+                  className="navigate-btn"
+                  onClick={() =>
+                    navigate(
+                      `/navigate?slat=${selectedSafeZone.latitude}&slng=${selectedSafeZone.longitude}`
+                    )
+                  }
+                >
+                  <FaRoute /> Start Emergency Navigation
+                </button>
+              )}
+            </div>
+          )}
+
+        <div className="card" style={{ marginTop: 40 }}>
           <h2 className="card-title">
-            <MdFeedback /> Feedback
+            <MdFeedback /> Feedback & Suggestions
           </h2>
 
           <select
             value={feedbackType}
             onChange={(e) => setFeedbackType(e.target.value)}
           >
-            <option value="Issue">Issue</option>
-            <option value="Suggestion">Suggestion</option>
-            <option value="Experience">Experience</option>
+            <option value="Issue">Report an Issue</option>
+            <option value="Suggestion">Suggest Improvement</option>
+            <option value="Experience">Share Experience</option>
           </select>
 
           <textarea
             value={feedbackMsg}
             onChange={(e) => setFeedbackMsg(e.target.value)}
-            placeholder="Write feedback…"
+            placeholder="Describe your feedback..."
+            rows={4}
           />
 
           <button
@@ -319,7 +376,7 @@ const UserHome = () => {
             onClick={submitFeedback}
             disabled={sending}
           >
-            {sending ? "Submitting…" : "Submit"}
+            {sending ? "Submitting..." : "Submit Feedback"}
           </button>
         </div>
       </main>
