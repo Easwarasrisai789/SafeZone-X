@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import EmergencyNavbar from "../components/EmergencyNavbar";
+import EmergencyNavbar from "../components/EmergencyNavbar"; // ✅ NAVBAR RESTORED
 import { db, auth } from "../firebase";
 import {
   doc,
@@ -21,7 +21,7 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-/* IMPORTANT: named export */
+/* ✅ named export – matches your qrAgent file */
 import { qrAgent } from "../rl/qrAgent";
 
 import "./UserHome.css";
@@ -70,7 +70,7 @@ const metersToText = (m) => {
 const UserHome = () => {
   const navigate = useNavigate();
 
-  /* STATE */
+  /* ---------------- STATE ---------------- */
   const [userLoc, setUserLoc] = useState(null);
   const [riskZones, setRiskZones] = useState([]);
   const [safeZones, setSafeZones] = useState([]);
@@ -89,7 +89,7 @@ const UserHome = () => {
   const intervalRef = useRef(null);
   const lastSentRef = useRef(0);
 
-  /* LOAD ZONES */
+  /* ---------------- LOAD ZONES ---------------- */
   useEffect(() => {
     const loadZones = async () => {
       try {
@@ -109,8 +109,8 @@ const UserHome = () => {
             .map((d) => ({ id: d.id, ...d.data() }))
             .filter((z) => z.active)
         );
-      } catch (e) {
-        console.error("Zone load failed:", e);
+      } catch (err) {
+        console.error("Zone loading failed:", err);
       } finally {
         setLoadingZones(false);
       }
@@ -119,9 +119,12 @@ const UserHome = () => {
     loadZones();
   }, []);
 
-  /* LOCATION TRACKING */
+  /* ---------------- LOCATION TRACKING ---------------- */
   const startLocationTracking = () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported");
+      return;
+    }
 
     setTracking(true);
     const uid = auth.currentUser?.uid || "guest";
@@ -180,7 +183,7 @@ const UserHome = () => {
     };
   }, []);
 
-  /* SAFE ZONE LOGIC */
+  /* ---------------- SAFE ZONE LOGIC ---------------- */
   const relatedSafeZones =
     userLoc && activeRiskZone
       ? safeZones.filter(
@@ -215,7 +218,7 @@ const UserHome = () => {
         )
       : null;
 
-  /* FEEDBACK */
+  /* ---------------- FEEDBACK ---------------- */
   const submitFeedback = async () => {
     if (!feedbackMsg.trim()) return alert("Enter feedback");
     try {
@@ -233,9 +236,10 @@ const UserHome = () => {
     }
   };
 
-  /* UI */
+  /* ---------------- UI ---------------- */
   return (
     <div className="page">
+      {/* ✅ ADMIN / USER LOGIN NAVBAR */}
       <EmergencyNavbar />
 
       <main className="main-container">
@@ -260,6 +264,7 @@ const UserHome = () => {
           )}
         </div>
 
+        {/* STATUS CARDS */}
         <div className="grid-2">
           <div className="card">
             <h2 className="card-title">
@@ -276,7 +281,9 @@ const UserHome = () => {
               </div>
             )}
 
-            <p><b>Risk Zone:</b> {activeRiskZone?.name || "None"}</p>
+            <p>
+              <b>Risk Zone:</b> {activeRiskZone?.name || "None"}
+            </p>
           </div>
 
           <div className="card">
@@ -286,7 +293,9 @@ const UserHome = () => {
 
             {selectedSafeZone ? (
               <>
-                <p><b>Distance:</b> {metersToText(distanceToSafeZone)}</p>
+                <p>
+                  <b>Distance:</b> {metersToText(distanceToSafeZone)}
+                </p>
                 <div className="safe-alert">
                   Follow navigation to reach safety
                 </div>
@@ -297,6 +306,7 @@ const UserHome = () => {
           </div>
         </div>
 
+        {/* DANGER MAP */}
         {tracking &&
           inRisk &&
           userLoc?.latitude &&
@@ -350,6 +360,7 @@ const UserHome = () => {
             </div>
           )}
 
+        {/* FEEDBACK */}
         <div className="card" style={{ marginTop: 40 }}>
           <h2 className="card-title">
             <MdFeedback /> Feedback & Suggestions
