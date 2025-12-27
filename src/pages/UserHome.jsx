@@ -68,6 +68,7 @@ const metersToText = (m) => {
 const UserHome = () => {
   const navigate = useNavigate();
 
+  /* ---------------- STATE ---------------- */
   const [userLoc, setUserLoc] = useState(null);
   const [riskZones, setRiskZones] = useState([]);
   const [safeZones, setSafeZones] = useState([]);
@@ -86,13 +87,15 @@ const UserHome = () => {
   const intervalRef = useRef(null);
   const lastSentRef = useRef(0);
 
-  /* FETCH ZONES (OPTIMIZED – NO REALTIME LISTENERS) */
+  /* ---------------- LOAD ZONES (SAFE) ---------------- */
   const loadZones = async () => {
     try {
       setLoadingZones(true);
 
-      const riskSnap = await getDocs(collection(db, "riskZones"));
-      const safeSnap = await getDocs(collection(db, "safeZones"));
+      const [riskSnap, safeSnap] = await Promise.all([
+        getDocs(collection(db, "riskZones")),
+        getDocs(collection(db, "safeZones")),
+      ]);
 
       setRiskZones(
         riskSnap.docs
@@ -105,21 +108,24 @@ const UserHome = () => {
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((z) => z.active)
       );
-    } catch (e) {
-      console.error("Zone load error:", e);
+    } catch (err) {
+      console.error("Failed to load zones:", err);
     } finally {
       setLoadingZones(false);
     }
   };
 
   useEffect(() => {
-    const timer = setTimeout(loadZones, 1500); // lazy load
-    return () => clearTimeout(timer);
+    const t = setTimeout(loadZones, 1500);
+    return () => clearTimeout(t);
   }, []);
 
-  /* START LOCATION TRACKING */
+  /* ---------------- LOCATION TRACKING ---------------- */
   const startLocationTracking = () => {
-    if (!navigator.geolocation) return alert("Geolocation not supported");
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported");
+      return;
+    }
 
     setTracking(true);
     const uid = auth.currentUser?.uid || "guest";
@@ -130,8 +136,10 @@ const UserHome = () => {
         const loc = { latitude, longitude };
         setUserLoc(loc);
 
+        if (!riskZones.length) return;
+
         let danger = false;
-        let matchedZone = null;
+        let matched = null;
 
         for (const zone of riskZones) {
           const d = getDistanceMeters(
@@ -142,13 +150,13 @@ const UserHome = () => {
           );
           if (d <= zone.radius) {
             danger = true;
-            matchedZone = zone;
+            matched = zone;
             break;
           }
         }
 
         setInRisk(danger);
-        setActiveRiskZone(matchedZone);
+        setActiveRiskZone(matched);
       },
       () => {
         alert("Location permission denied");
@@ -184,7 +192,7 @@ const UserHome = () => {
     };
   }, []);
 
-  /* SAFE ZONE LOGIC */
+  /* ---------------- SAFE ZONE LOGIC (GUARDED) ---------------- */
   const relatedSafeZones =
     userLoc && activeRiskZone
       ? safeZones.filter(
@@ -199,9 +207,23 @@ const UserHome = () => {
         )
       : [];
 
-  let selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
+  let selectedSafeZone = null;
 
-  if (!selectedSafeZone && userLoc && relatedSafeZones.length > 0) {
+  if (
+    userLoc &&
+    activeRiskZone &&
+    Array.isArray(relatedSafeZones) &&
+    relatedSafeZones.length > 0
+  ) {
+    selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
+  }
+
+  if (
+    !selectedSafeZone &&
+    userLoc &&
+    Array.isArray(relatedSafeZones) &&
+    relatedSafeZones.length > 0
+  ) {
     selectedSafeZone = relatedSafeZones.reduce((nearest, z) => {
       const d1 = getDistanceMeters(
         userLoc.latitude,
@@ -231,7 +253,7 @@ const UserHome = () => {
         )
       : null;
 
-  /* FEEDBACK */
+  /* ---------------- FEEDBACK ---------------- */
   const submitFeedback = async () => {
     if (!feedbackMsg.trim()) return alert("Enter feedback");
     try {
@@ -249,18 +271,144 @@ const UserHome = () => {
     }
   };
 
+  /* ---------------- UI ---------------- */
   return (
     <div className="page">
       <EmergencyNavbar />
 
       <main className="main-container">
         {loadingZones && (
-          <div style={{ textAlign: "center", marginTop: 30 }}>
-            Loading Safe & Risk Zones...
+          <div
+            style={{
+              background: "#fef3c7",
+              color: "#92400e",
+              padding: "12px",
+              borderRadius: "12px",
+              marginBottom: "20px",
+              textAlign: "center",
+            }}
+          >
+            Initializing Safe & Risk Zones…
           </div>
         )}
 
-        {/* 🔽 REST OF YOUR JSX REMAINS SAME 🔽 */}
+        <div className="hero">
+          <h1 className="hero-title">
+            <HiShieldCheck /> Safe Zone Monitoring
+          </h1>
+          <p className="hero-text">
+            Live emergency monitoring and navigation assistance
+          </p>
+
+          {!tracking && (
+            <button className="navigate-btn" onClick={startLocationTracking}>
+              <MdMyLocation /> Enable Location Access
+            </button>
+          )}
+        </div>
+
+        <div className="grid-2">
+          <div className="card">
+            <h2 className="card-title">
+              <HiMapPin /> Current Status
+            </h2>
+
+            {inRisk ? (
+              <div className="risk-alert">
+                <HiExclamationTriangle /> Inside Risk Zone
+              </div>
+            ) : (
+              <div className="safe-alert">
+                <HiShieldCheck /> Safe Area
+              </div>
+            )}
+
+            <p><b>Risk Zone:</b> {activeRiskZone?.name || "None"}</p>
+          </div>
+
+          <div className="card">
+            <h2 className="card-title">
+              <HiShieldCheck /> Nearest Safe Zone
+            </h2>
+
+            {selectedSafeZone ? (
+              <p><b>Distance:</b> {metersToText(distanceToSafeZone)}</p>
+            ) : (
+              <p>No safe zone available</p>
+            )}
+          </div>
+        </div>
+
+        {tracking && inRisk && userLoc && activeRiskZone && (
+          <div className="card" style={{ marginTop: "40px" }}>
+            <MapContainer
+              center={[userLoc.latitude, userLoc.longitude]}
+              zoom={14}
+              style={{ height: "340px", width: "100%" }}
+            >
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <Circle
+                center={[activeRiskZone.latitude, activeRiskZone.longitude]}
+                radius={activeRiskZone.radius}
+                pathOptions={{ color: "red", fillOpacity: 0.25 }}
+              />
+              {relatedSafeZones.map((z) => (
+                <Circle
+                  key={z.id}
+                  center={[z.latitude, z.longitude]}
+                  radius={z.radius}
+                  pathOptions={{ color: "green", fillOpacity: 0.35 }}
+                />
+              ))}
+              <Marker position={[userLoc.latitude, userLoc.longitude]}>
+                <Popup>You are here</Popup>
+              </Marker>
+            </MapContainer>
+
+            {selectedSafeZone && (
+              <button
+                className="navigate-btn"
+                onClick={() =>
+                  navigate(
+                    `/navigate?slat=${selectedSafeZone.latitude}&slng=${selectedSafeZone.longitude}`
+                  )
+                }
+              >
+                <FaRoute /> Start Emergency Navigation
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="card" style={{ marginTop: "40px" }}>
+          <h2 className="card-title">
+            <MdFeedback /> Feedback & Suggestions
+          </h2>
+
+          <select
+            value={feedbackType}
+            onChange={(e) => setFeedbackType(e.target.value)}
+          >
+            <option value="Issue">Report an Issue</option>
+            <option value="Suggestion">Suggest Improvement</option>
+            <option value="Experience">Share Experience</option>
+          </select>
+
+          <textarea
+            value={feedbackMsg}
+            onChange={(e) => setFeedbackMsg(e.target.value)}
+            placeholder="Describe your feedback..."
+            rows={4}
+          />
+
+          <button
+            className="navigate-btn"
+            onClick={submitFeedback}
+            disabled={sending}
+          >
+            {sending ? "Submitting..." : "Submit Feedback"}
+          </button>
+        </div>
       </main>
     </div>
   );
