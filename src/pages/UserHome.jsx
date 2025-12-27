@@ -21,7 +21,9 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-import qrAgent from "../rl/qrAgent";   // ✅ DEFAULT IMPORT (FIXED)
+/* ✅ NAMED IMPORT (FIXED) */
+import { qrAgent } from "../rl/qrAgent";
+
 import "./UserHome.css";
 
 /* ICONS */
@@ -167,7 +169,8 @@ const UserHome = () => {
 
   useEffect(() => {
     return () => {
-      if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
+      if (watchIdRef.current)
+        navigator.geolocation.clearWatch(watchIdRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
@@ -188,6 +191,7 @@ const UserHome = () => {
       : [];
 
   let selectedSafeZone = null;
+
   try {
     if (userLoc && relatedSafeZones.length > 0) {
       selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
@@ -225,9 +229,7 @@ const UserHome = () => {
       <EmergencyNavbar />
 
       <main className="main-container">
-        {loadingZones && (
-          <p style={{ textAlign: "center" }}>Initializing system…</p>
-        )}
+        {loadingZones && <p style={{ textAlign: "center" }}>Initializing…</p>}
 
         <div className="hero">
           <h1 className="hero-title">
