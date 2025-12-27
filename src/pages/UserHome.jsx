@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import EmergencyNavbar from "../components/EmergencyNavbar";
+import ErrorBoundary from "../components/ErrorBoundary";
 import { db, auth } from "../firebase";
 import {
   doc,
@@ -87,7 +88,7 @@ const UserHome = () => {
   const intervalRef = useRef(null);
   const lastSentRef = useRef(0);
 
-  /* ---------------- LOAD ZONES (SAFE) ---------------- */
+  /* ---------------- LOAD ZONES ---------------- */
   const loadZones = async () => {
     try {
       setLoadingZones(true);
@@ -109,14 +110,14 @@ const UserHome = () => {
           .filter((z) => z.active)
       );
     } catch (err) {
-      console.error("Failed to load zones:", err);
+      console.error("Zone loading failed:", err);
     } finally {
       setLoadingZones(false);
     }
   };
 
   useEffect(() => {
-    const t = setTimeout(loadZones, 1500);
+    const t = setTimeout(loadZones, 1200);
     return () => clearTimeout(t);
   }, []);
 
@@ -133,8 +134,7 @@ const UserHome = () => {
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        const loc = { latitude, longitude };
-        setUserLoc(loc);
+        setUserLoc({ latitude, longitude });
 
         if (!riskZones.length) return;
 
@@ -209,13 +209,18 @@ const UserHome = () => {
 
   let selectedSafeZone = null;
 
-  if (
-    userLoc &&
-    activeRiskZone &&
-    Array.isArray(relatedSafeZones) &&
-    relatedSafeZones.length > 0
-  ) {
-    selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
+  try {
+    if (
+      userLoc &&
+      activeRiskZone &&
+      Array.isArray(relatedSafeZones) &&
+      relatedSafeZones.length > 0
+    ) {
+      selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
+    }
+  } catch (err) {
+    console.error("qrAgent crashed safely:", err);
+    selectedSafeZone = null;
   }
 
   if (
@@ -276,140 +281,153 @@ const UserHome = () => {
     <div className="page">
       <EmergencyNavbar />
 
-      <main className="main-container">
-        {loadingZones && (
-          <div
-            style={{
-              background: "#fef3c7",
-              color: "#92400e",
-              padding: "12px",
-              borderRadius: "12px",
-              marginBottom: "20px",
-              textAlign: "center",
-            }}
-          >
-            Initializing Safe & Risk Zones…
-          </div>
-        )}
-
-        <div className="hero">
-          <h1 className="hero-title">
-            <HiShieldCheck /> Safe Zone Monitoring
-          </h1>
-          <p className="hero-text">
-            Live emergency monitoring and navigation assistance
-          </p>
-
-          {!tracking && (
-            <button className="navigate-btn" onClick={startLocationTracking}>
-              <MdMyLocation /> Enable Location Access
-            </button>
-          )}
-        </div>
-
-        <div className="grid-2">
-          <div className="card">
-            <h2 className="card-title">
-              <HiMapPin /> Current Status
-            </h2>
-
-            {inRisk ? (
-              <div className="risk-alert">
-                <HiExclamationTriangle /> Inside Risk Zone
-              </div>
-            ) : (
-              <div className="safe-alert">
-                <HiShieldCheck /> Safe Area
-              </div>
-            )}
-
-            <p><b>Risk Zone:</b> {activeRiskZone?.name || "None"}</p>
-          </div>
-
-          <div className="card">
-            <h2 className="card-title">
-              <HiShieldCheck /> Nearest Safe Zone
-            </h2>
-
-            {selectedSafeZone ? (
-              <p><b>Distance:</b> {metersToText(distanceToSafeZone)}</p>
-            ) : (
-              <p>No safe zone available</p>
-            )}
-          </div>
-        </div>
-
-        {tracking && inRisk && userLoc && activeRiskZone && (
-          <div className="card" style={{ marginTop: "40px" }}>
-            <MapContainer
-              center={[userLoc.latitude, userLoc.longitude]}
-              zoom={14}
-              style={{ height: "340px", width: "100%" }}
+      <ErrorBoundary>
+        <main className="main-container">
+          {loadingZones && (
+            <div
+              style={{
+                background: "#fef3c7",
+                color: "#92400e",
+                padding: "12px",
+                borderRadius: "12px",
+                marginBottom: "20px",
+                textAlign: "center",
+              }}
             >
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <Circle
-                center={[activeRiskZone.latitude, activeRiskZone.longitude]}
-                radius={activeRiskZone.radius}
-                pathOptions={{ color: "red", fillOpacity: 0.25 }}
-              />
-              {relatedSafeZones.map((z) => (
-                <Circle
-                  key={z.id}
-                  center={[z.latitude, z.longitude]}
-                  radius={z.radius}
-                  pathOptions={{ color: "green", fillOpacity: 0.35 }}
-                />
-              ))}
-              <Marker position={[userLoc.latitude, userLoc.longitude]}>
-                <Popup>You are here</Popup>
-              </Marker>
-            </MapContainer>
+              Initializing Safe & Risk Zones…
+            </div>
+          )}
 
-            {selectedSafeZone && (
-              <button
-                className="navigate-btn"
-                onClick={() =>
-                  navigate(
-                    `/navigate?slat=${selectedSafeZone.latitude}&slng=${selectedSafeZone.longitude}`
-                  )
-                }
-              >
-                <FaRoute /> Start Emergency Navigation
+          <div className="hero">
+            <h1 className="hero-title">
+              <HiShieldCheck /> Safe Zone Monitoring
+            </h1>
+            <p className="hero-text">
+              Live emergency monitoring and navigation assistance
+            </p>
+
+            {!tracking && (
+              <button className="navigate-btn" onClick={startLocationTracking}>
+                <MdMyLocation /> Enable Location Access
               </button>
             )}
           </div>
-        )}
 
-        <div className="card" style={{ marginTop: "40px" }}>
-          <h2 className="card-title">
-            <MdFeedback /> Feedback & Suggestions
-          </h2>
+          <div className="grid-2">
+            <div className="card">
+              <h2 className="card-title">
+                <HiMapPin /> Current Status
+              </h2>
 
-          <select
-            value={feedbackType}
-            onChange={(e) => setFeedbackType(e.target.value)}
-          >
-            <option value="Issue">Report an Issue</option>
-            <option value="Suggestion">Suggest Improvement</option>
-            <option value="Experience">Share Experience</option>
-          </select>
+              {inRisk ? (
+                <div className="risk-alert">
+                  <HiExclamationTriangle /> Inside Risk Zone
+                </div>
+              ) : (
+                <div className="safe-alert">
+                  <HiShieldCheck /> Safe Area
+                </div>
+              )}
 
-          <textarea
-            value={feedbackMsg}
-            onChange={(e) => setFeedbackMsg(e.target.value)}
-            placeholder="Describe your feedback..."
-            rows={4}
-          />
+              <p><b>Risk Zone:</b> {activeRiskZone?.name || "None"}</p>
+            </div>
 
-          <button
-            className="navigate-btn"
-            onClick={submitFeedback}
-            disabled={sending}
-          >
-            {sending ? "Submitting..." : "Submit Feedback"}
-          </button>
-        </div>
-      </main>
+            <div className="card">
+              <h2 className="card-title">
+                <HiShieldCheck /> Nearest Safe Zone
+              </h2>
+
+              {selectedSafeZone ? (
+                <p><b>Distance:</b> {metersToText(distanceToSafeZone)}</p>
+              ) : (
+                <p>No safe zone available</p>
+              )}
+            </div>
+          </div>
+
+          {tracking &&
+            inRisk &&
+            userLoc?.latitude &&
+            userLoc?.longitude &&
+            activeRiskZone?.latitude &&
+            activeRiskZone?.longitude && (
+              <div className="card" style={{ marginTop: "40px" }}>
+                <MapContainer
+                  center={[userLoc.latitude, userLoc.longitude]}
+                  zoom={14}
+                  style={{ height: "340px", width: "100%" }}
+                >
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+
+                  <Circle
+                    center={[
+                      activeRiskZone.latitude,
+                      activeRiskZone.longitude,
+                    ]}
+                    radius={activeRiskZone.radius}
+                    pathOptions={{ color: "red", fillOpacity: 0.25 }}
+                  />
+
+                  {relatedSafeZones.map((z) => (
+                    <Circle
+                      key={z.id}
+                      center={[z.latitude, z.longitude]}
+                      radius={z.radius}
+                      pathOptions={{ color: "green", fillOpacity: 0.35 }}
+                    />
+                  ))}
+
+                  <Marker position={[userLoc.latitude, userLoc.longitude]}>
+                    <Popup>You are here</Popup>
+                  </Marker>
+                </MapContainer>
+
+                {selectedSafeZone && (
+                  <button
+                    className="navigate-btn"
+                    onClick={() =>
+                      navigate(
+                        `/navigate?slat=${selectedSafeZone.latitude}&slng=${selectedSafeZone.longitude}`
+                      )
+                    }
+                  >
+                    <FaRoute /> Start Emergency Navigation
+                  </button>
+                )}
+              </div>
+            )}
+
+          <div className="card" style={{ marginTop: "40px" }}>
+            <h2 className="card-title">
+              <MdFeedback /> Feedback & Suggestions
+            </h2>
+
+            <select
+              value={feedbackType}
+              onChange={(e) => setFeedbackType(e.target.value)}
+            >
+              <option value="Issue">Report an Issue</option>
+              <option value="Suggestion">Suggest Improvement</option>
+              <option value="Experience">Share Experience</option>
+            </select>
+
+            <textarea
+              value={feedbackMsg}
+              onChange={(e) => setFeedbackMsg(e.target.value)}
+              placeholder="Describe your feedback..."
+              rows={4}
+            />
+
+            <button
+              className="navigate-btn"
+              onClick={submitFeedback}
+              disabled={sending}
+            >
+              {sending ? "Submitting..." : "Submit Feedback"}
+            </button>
+          </div>
+        </main>
+      </ErrorBoundary>
     </div>
   );
 };
