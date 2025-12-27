@@ -1,26 +1,40 @@
-import { useNavigate } from "react-router-dom";
-import "./Navbar.css";
+import React from "react";
 
-const Navbar = () => {
-  const navigate = useNavigate();
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
-  return (
-    <nav className="navbar">
-      <div className="navbar-title">
-        <span className="navbar-indicator"></span>
-        Safe Zone System
-      </div>
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
 
-      <div className="navbar-actions">
-        <button
-          className="admin-btn"
-          onClick={() => navigate("/admin/login")}
-        >
-          Admin Login
-        </button>
-      </div>
-    </nav>
-  );
-};
+  componentDidCatch(error, info) {
+    console.error("UI crashed:", error, info);
+  }
 
-export default Navbar;
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          padding: "40px",
+          textAlign: "center",
+          color: "#991b1b",
+          background: "#fee2e2",
+          borderRadius: "12px",
+          margin: "40px"
+        }}>
+          <h2>⚠️ Something went wrong</h2>
+          <p>
+            The system is recovering. Please refresh or try again.
+          </p>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default ErrorBoundary;
