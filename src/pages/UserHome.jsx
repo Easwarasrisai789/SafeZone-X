@@ -21,7 +21,7 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-import { qrAgent } from "../rl/qrAgent"; // ✅ named import (unchanged)
+import { qrAgent } from "../rl/qrAgent";
 import "./UserHome.css";
 
 /* ICONS */
@@ -85,17 +85,17 @@ const UserHome = () => {
   const intervalRef = useRef(null);
   const lastSentRef = useRef(0);
 
-  /* ---------------- FETCH ZONES (REAL-TIME KEPT) ---------------- */
+  /* FETCH ZONES */
   useEffect(() => {
     const unsubRisk = onSnapshot(collection(db, "riskZones"), (snap) => {
       setRiskZones(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((z) => z.active)
+        snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(z => z.active)
       );
     });
 
     const unsubSafe = onSnapshot(collection(db, "safeZones"), (snap) => {
       setSafeZones(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((z) => z.active)
+        snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(z => z.active)
       );
     });
 
@@ -105,7 +105,7 @@ const UserHome = () => {
     };
   }, []);
 
-  /* ---------------- LOCATION TRACKING ---------------- */
+  /* START LOCATION TRACKING */
   const startLocationTracking = () => {
     if (!navigator.geolocation) {
       alert("Geolocation not supported");
@@ -120,8 +120,6 @@ const UserHome = () => {
         const { latitude, longitude } = pos.coords;
         const loc = { latitude, longitude };
         setUserLoc(loc);
-
-        if (!riskZones.length) return;
 
         let danger = false;
         let matchedZone = null;
@@ -171,13 +169,12 @@ const UserHome = () => {
 
   useEffect(() => {
     return () => {
-      if (watchIdRef.current)
-        navigator.geolocation.clearWatch(watchIdRef.current);
+      if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
 
-  /* ---------------- SAFE ZONE LOGIC (CRASH-PROOF) ---------------- */
+  /* SAFE ZONE LOGIC */
   const relatedSafeZones =
     userLoc && activeRiskZone
       ? safeZones.filter(
@@ -192,16 +189,7 @@ const UserHome = () => {
         )
       : [];
 
-  let selectedSafeZone = null;
-
-  try {
-    if (userLoc && relatedSafeZones.length > 0) {
-      selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
-    }
-  } catch (e) {
-    console.error("qrAgent error:", e);
-    selectedSafeZone = null;
-  }
+  let selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
 
   if (!selectedSafeZone && userLoc && relatedSafeZones.length > 0) {
     selectedSafeZone = relatedSafeZones.reduce((nearest, z) => {
@@ -235,7 +223,7 @@ const UserHome = () => {
 
   const lastUpdated = userLoc ? new Date().toLocaleTimeString() : "--";
 
-  /* ---------------- FEEDBACK ---------------- */
+  /* FEEDBACK */
   const submitFeedback = async () => {
     if (!feedbackMsg.trim()) return alert("Enter feedback");
     try {
@@ -253,10 +241,8 @@ const UserHome = () => {
     }
   };
 
-  /* ---------------- UI ---------------- */
   return (
     <div className="page">
-      {/* ✅ NAVBAR KEPT – ADMIN LOGIN SAFE */}
       <EmergencyNavbar />
 
       <main className="main-container">
@@ -313,60 +299,55 @@ const UserHome = () => {
           </div>
         </div>
 
-        {tracking &&
-          inRisk &&
-          userLoc?.latitude &&
-          userLoc?.longitude &&
-          activeRiskZone?.latitude &&
-          activeRiskZone?.longitude && (
-            <div className="card" style={{ marginTop: 40 }}>
-              <h2 className="card-title">
-                <HiExclamationTriangle /> Danger Alert
-              </h2>
+        {tracking && inRisk && userLoc && activeRiskZone && (
+          <div className="card" style={{ marginTop: "40px" }}>
+            <h2 className="card-title">
+              <HiExclamationTriangle /> Danger Alert
+            </h2>
 
-              <MapContainer
-                center={[userLoc.latitude, userLoc.longitude]}
-                zoom={14}
-                style={{ height: 340, width: "100%" }}
-              >
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <MapContainer
+              center={[userLoc.latitude, userLoc.longitude]}
+              zoom={14}
+              style={{ height: "340px", width: "100%" }}
+            >
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
+              <Circle
+                center={[activeRiskZone.latitude, activeRiskZone.longitude]}
+                radius={activeRiskZone.radius}
+                pathOptions={{ color: "red", fillOpacity: 0.25 }}
+              />
+
+              {relatedSafeZones.map((z) => (
                 <Circle
-                  center={[activeRiskZone.latitude, activeRiskZone.longitude]}
-                  radius={activeRiskZone.radius}
-                  pathOptions={{ color: "red", fillOpacity: 0.25 }}
+                  key={z.id}
+                  center={[z.latitude, z.longitude]}
+                  radius={z.radius}
+                  pathOptions={{ color: "green", fillOpacity: 0.35 }}
                 />
+              ))}
 
-                {relatedSafeZones.map((z) => (
-                  <Circle
-                    key={z.id}
-                    center={[z.latitude, z.longitude]}
-                    radius={z.radius}
-                    pathOptions={{ color: "green", fillOpacity: 0.35 }}
-                  />
-                ))}
+              <Marker position={[userLoc.latitude, userLoc.longitude]}>
+                <Popup>You are here</Popup>
+              </Marker>
+            </MapContainer>
 
-                <Marker position={[userLoc.latitude, userLoc.longitude]}>
-                  <Popup>You are here</Popup>
-                </Marker>
-              </MapContainer>
+            {selectedSafeZone && (
+              <button
+                className="navigate-btn"
+                onClick={() =>
+                  navigate(
+                    `/navigate?slat=${selectedSafeZone.latitude}&slng=${selectedSafeZone.longitude}`
+                  )
+                }
+              >
+                <FaRoute /> Start Emergency Navigation
+              </button>
+            )}
+          </div>
+        )}
 
-              {selectedSafeZone && (
-                <button
-                  className="navigate-btn"
-                  onClick={() =>
-                    navigate(
-                      `/navigate?slat=${selectedSafeZone.latitude}&slng=${selectedSafeZone.longitude}`
-                    )
-                  }
-                >
-                  <FaRoute /> Start Emergency Navigation
-                </button>
-              )}
-            </div>
-          )}
-
-        <div className="card" style={{ marginTop: 40 }}>
+        <div className="card" style={{ marginTop: "40px" }}>
           <h2 className="card-title">
             <MdFeedback /> Feedback & Suggestions
           </h2>
@@ -398,6 +379,6 @@ const UserHome = () => {
       </main>
     </div>
   );
-};
+};   
 
 export default UserHome;
