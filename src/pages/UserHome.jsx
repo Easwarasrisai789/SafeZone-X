@@ -1,14 +1,14 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import EmergencyNavbar from "../components/EmergencyNavbar"; // ✅ NAVBAR RESTORED
+import EmergencyNavbar from "../components/EmergencyNavbar";
 import { db, auth } from "../firebase";
 import {
   doc,
   setDoc,
   serverTimestamp,
   collection,
+  onSnapshot,
   addDoc,
-  getDocs,
 } from "firebase/firestore";
 
 import {
@@ -21,9 +21,7 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-/* ✅ named export – matches your qrAgent file */
-import { qrAgent } from "../rl/qrAgent";
-
+import { qrAgent } from "../rl/qrAgent"; // ✅ named import (unchanged)
 import "./UserHome.css";
 
 /* ICONS */
@@ -70,11 +68,9 @@ const metersToText = (m) => {
 const UserHome = () => {
   const navigate = useNavigate();
 
-  /* ---------------- STATE ---------------- */
   const [userLoc, setUserLoc] = useState(null);
   const [riskZones, setRiskZones] = useState([]);
   const [safeZones, setSafeZones] = useState([]);
-  const [loadingZones, setLoadingZones] = useState(true);
 
   const [inRisk, setInRisk] = useState(false);
   const [activeRiskZone, setActiveRiskZone] = useState(null);
@@ -89,34 +85,24 @@ const UserHome = () => {
   const intervalRef = useRef(null);
   const lastSentRef = useRef(0);
 
-  /* ---------------- LOAD ZONES ---------------- */
+  /* ---------------- FETCH ZONES (REAL-TIME KEPT) ---------------- */
   useEffect(() => {
-    const loadZones = async () => {
-      try {
-        const [riskSnap, safeSnap] = await Promise.all([
-          getDocs(collection(db, "riskZones")),
-          getDocs(collection(db, "safeZones")),
-        ]);
+    const unsubRisk = onSnapshot(collection(db, "riskZones"), (snap) => {
+      setRiskZones(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((z) => z.active)
+      );
+    });
 
-        setRiskZones(
-          riskSnap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
-            .filter((z) => z.active)
-        );
+    const unsubSafe = onSnapshot(collection(db, "safeZones"), (snap) => {
+      setSafeZones(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((z) => z.active)
+      );
+    });
 
-        setSafeZones(
-          safeSnap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
-            .filter((z) => z.active)
-        );
-      } catch (err) {
-        console.error("Zone loading failed:", err);
-      } finally {
-        setLoadingZones(false);
-      }
+    return () => {
+      unsubRisk();
+      unsubSafe();
     };
-
-    loadZones();
   }, []);
 
   /* ---------------- LOCATION TRACKING ---------------- */
@@ -132,22 +118,30 @@ const UserHome = () => {
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        setUserLoc({ latitude, longitude });
+        const loc = { latitude, longitude };
+        setUserLoc(loc);
+
+        if (!riskZones.length) return;
 
         let danger = false;
-        let matched = null;
+        let matchedZone = null;
 
-        for (const z of riskZones) {
-          const d = getDistanceMeters(latitude, longitude, z.latitude, z.longitude);
-          if (d <= z.radius) {
+        for (const zone of riskZones) {
+          const d = getDistanceMeters(
+            latitude,
+            longitude,
+            zone.latitude,
+            zone.longitude
+          );
+          if (d <= zone.radius) {
             danger = true;
-            matched = z;
+            matchedZone = zone;
             break;
           }
         }
 
         setInRisk(danger);
-        setActiveRiskZone(matched);
+        setActiveRiskZone(matchedZone);
       },
       () => {
         alert("Location permission denied");
@@ -183,7 +177,7 @@ const UserHome = () => {
     };
   }, []);
 
-  /* ---------------- SAFE ZONE LOGIC ---------------- */
+  /* ---------------- SAFE ZONE LOGIC (CRASH-PROOF) ---------------- */
   const relatedSafeZones =
     userLoc && activeRiskZone
       ? safeZones.filter(
@@ -199,6 +193,7 @@ const UserHome = () => {
       : [];
 
   let selectedSafeZone = null;
+
   try {
     if (userLoc && relatedSafeZones.length > 0) {
       selectedSafeZone = qrAgent(userLoc, relatedSafeZones);
@@ -206,6 +201,26 @@ const UserHome = () => {
   } catch (e) {
     console.error("qrAgent error:", e);
     selectedSafeZone = null;
+  }
+
+  if (!selectedSafeZone && userLoc && relatedSafeZones.length > 0) {
+    selectedSafeZone = relatedSafeZones.reduce((nearest, z) => {
+      const d1 = getDistanceMeters(
+        userLoc.latitude,
+        userLoc.longitude,
+        z.latitude,
+        z.longitude
+      );
+      const d2 = nearest
+        ? getDistanceMeters(
+            userLoc.latitude,
+            userLoc.longitude,
+            nearest.latitude,
+            nearest.longitude
+          )
+        : Infinity;
+      return d1 < d2 ? z : nearest;
+    }, null);
   }
 
   const distanceToSafeZone =
@@ -217,6 +232,8 @@ const UserHome = () => {
           selectedSafeZone.longitude
         )
       : null;
+
+  const lastUpdated = userLoc ? new Date().toLocaleTimeString() : "--";
 
   /* ---------------- FEEDBACK ---------------- */
   const submitFeedback = async () => {
@@ -239,16 +256,10 @@ const UserHome = () => {
   /* ---------------- UI ---------------- */
   return (
     <div className="page">
-      {/* ✅ ADMIN / USER LOGIN NAVBAR */}
+      {/* ✅ NAVBAR KEPT – ADMIN LOGIN SAFE */}
       <EmergencyNavbar />
 
       <main className="main-container">
-        {loadingZones && (
-          <div style={{ textAlign: "center", marginBottom: 20 }}>
-            Initializing Safe & Risk Zones…
-          </div>
-        )}
-
         <div className="hero">
           <h1 className="hero-title">
             <HiShieldCheck /> Safe Zone Monitoring
@@ -264,7 +275,6 @@ const UserHome = () => {
           )}
         </div>
 
-        {/* STATUS CARDS */}
         <div className="grid-2">
           <div className="card">
             <h2 className="card-title">
@@ -281,9 +291,8 @@ const UserHome = () => {
               </div>
             )}
 
-            <p>
-              <b>Risk Zone:</b> {activeRiskZone?.name || "None"}
-            </p>
+            <p><b>Risk Zone:</b> {activeRiskZone?.name || "None"}</p>
+            <p><b>Last Update:</b> {lastUpdated}</p>
           </div>
 
           <div className="card">
@@ -293,9 +302,7 @@ const UserHome = () => {
 
             {selectedSafeZone ? (
               <>
-                <p>
-                  <b>Distance:</b> {metersToText(distanceToSafeZone)}
-                </p>
+                <p><b>Distance:</b> {metersToText(distanceToSafeZone)}</p>
                 <div className="safe-alert">
                   Follow navigation to reach safety
                 </div>
@@ -306,7 +313,6 @@ const UserHome = () => {
           </div>
         </div>
 
-        {/* DANGER MAP */}
         {tracking &&
           inRisk &&
           userLoc?.latitude &&
@@ -360,7 +366,6 @@ const UserHome = () => {
             </div>
           )}
 
-        {/* FEEDBACK */}
         <div className="card" style={{ marginTop: 40 }}>
           <h2 className="card-title">
             <MdFeedback /> Feedback & Suggestions
